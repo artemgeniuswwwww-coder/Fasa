@@ -15,7 +15,22 @@ app = Flask(__name__)
 user_data = {}
 
 # ==========================================
-# ДНЕВНИК (30+ ШАГОВ)
+# ОЧЕРЕДИ ДЛЯ НЕПОВТОРЯЮЩИХСЯ СООБЩЕНИЙ
+# ==========================================
+stalker_questions_queue = []
+stalker_yes_queue = []
+stalker_no_queue = []
+passive_messages_queue = []
+
+def get_next_from_queue(queue, source_list):
+    """Берёт следующий элемент из перемешанной очереди без повторов"""
+    if not queue:
+        queue.extend(source_list)
+        random.shuffle(queue)
+    return queue.pop(0)
+
+# ==========================================
+# ДНЕВНИК (25+ ШАГОВ, 5 КОНЦОВОК)
 # ==========================================
 DIARY_STEPS = {
     0: {"text": "🕯️ **Запись №1**\n\n*«Я нашёл этот дневник на чердаке старого дома. Он пахнет сыростью и... чем-то ещё. Кожа обложки холодная, будто её только что держали в морге.»*", "buttons": [("Открыть дневник", "go_1"), ("Бросить его", "quit")]},
@@ -125,18 +140,20 @@ def format_time_ago(dt):
         return f"{diff.seconds // 3600} часов"
 
 # ==========================================
-# ФОНОВЫЕ ЦИКЛЫ
+# ФОНОВЫЕ ЦИКЛЫ (БЕЗ ПОВТОРОВ)
 # ==========================================
 def observer_loop(user_id, chat_id):
     user = user_data.get(user_id)
     while user.get("observer_active"):
-        time.sleep(random.randint(30, 90))  # Чаще
+        time.sleep(random.randint(300, 900)) 
         if not user.get("observer_active"):
             return
         try:
             time_ago = format_time_ago(user["last_seen"])
             count = len(user["messages"])
-            msg = random.choice(STALKER_PASSIVE).format(time=time_ago, count=count)
+            # Берём из очереди без повторов
+            msg_template = get_next_from_queue(passive_messages_queue, STALKER_PASSIVE)
+            msg = msg_template.format(time=time_ago, count=count)
             bot.send_message(chat_id, msg)
         except:
             pass
@@ -144,10 +161,11 @@ def observer_loop(user_id, chat_id):
 def stalker_loop(user_id, chat_id):
     user = user_data.get(user_id)
     while user.get("stalker_active"):
-        time.sleep(random.randint(15, 30))  # ОЧЕНЬ ЧАСТО
+        time.sleep(random.randint(120, 240))
         if not user.get("stalker_active"):
             return
-        q = random.choice(STALKER_QUESTIONS)
+        # Берём вопрос из очереди без повторов
+        q = get_next_from_queue(stalker_questions_queue, STALKER_QUESTIONS)
         user["last_question_time"] = datetime.now()
         try:
             markup = InlineKeyboardMarkup()
@@ -231,7 +249,7 @@ def handle(message):
         bot.reply_to(
             message,
             "👁️ **Наблюдатель включён.**\n\n"
-            "Он будет писать тебе. Не удивляйся, если он знает о тебе больше, чем ты думаешь.\n\n"
+            "Он будет писать тебе. Но не часто. Он умеет ждать.\n\n"
             "Чтобы остановить — /stop",
             parse_mode='Markdown',
             reply_markup=main_keyboard()
@@ -285,17 +303,18 @@ def callback(call):
     if call.data in ["stalker_yes", "stalker_no"]:
         if user.get("last_question_time"):
             elapsed = (datetime.now() - user["last_question_time"]).seconds
-            if elapsed > 30:  # Жёсткий таймер
+            if elapsed > 60:
                 user["blocked_until"] = datetime.now() + timedelta(seconds=120)
                 user["stalker_active"] = False
                 bot.edit_message_text("💀 Ты слишком долго думал. Я обиделся. Другие режимы закрыты на 2 минуты.", call.message.chat.id, call.message.message_id)
                 bot.answer_callback_query(call.id)
                 return
         
+        # БЕЗ ПОВТОРОВ
         if call.data == "stalker_yes":
-            reaction = random.choice(STALKER_YES)
+            reaction = get_next_from_queue(stalker_yes_queue, STALKER_YES)
         else:
-            reaction = random.choice(STALKER_NO)
+            reaction = get_next_from_queue(stalker_no_queue, STALKER_NO)
         bot.edit_message_text(f"{call.message.text}\n\n{reaction}", call.message.chat.id, call.message.message_id)
         bot.answer_callback_query(call.id)
         return
