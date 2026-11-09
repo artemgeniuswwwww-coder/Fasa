@@ -19,7 +19,7 @@ if not OPENROUTER_KEY:
     exit(1)
 
 # НОВАЯ МОДЕЛЬ
-MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+MODEL = "google/gemini-flash-1.5-8b:free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
