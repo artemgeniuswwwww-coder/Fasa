@@ -1,6 +1,7 @@
 import telebot
 import os
 import random
+import time
 from flask import Flask, request
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
@@ -20,9 +21,21 @@ WORDS = [
 ]
 
 # ==========================================
+# СТАДИИ ВИСЕЛИЦЫ
+# ==========================================
+HANGMAN_STAGES = [
+    "  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========",
+    "  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========",
+]
+
+# ==========================================
 # СОСТОЯНИЯ ИГР
 # ==========================================
-# {user_id: {"mode": "guess"/"hangman"/None, "data": {...}}}
 game_state = {}
 
 def reset_state(user_id):
@@ -88,7 +101,7 @@ def handle(message):
         bot.reply_to(
             message,
             "📖 **Что я умею:**\n\n"
-            "🎲 **Кубик** — 1–6\n"
+            "🎲 **Кубик** — анимация кубика\n"
             "🪙 **Монетка** — орёл/решка\n"
             "🔢 **Случайное число** — 1–100\n"
             "🎯 **Угадай число** — игра\n"
@@ -106,14 +119,17 @@ def handle(message):
         return
 
     # ==================================
-    # РАНДОМАЙЗЕР (всегда доступен)
+    # РАНДОМАЙЗЕР
     # ==================================
     if text == "🎲 Кубик" or text == "/dice":
-        bot.reply_to(message, f"🎲 Выпало: **{random.randint(1, 6)}**", parse_mode='Markdown')
+        bot.send_dice(message.chat.id, emoji="🎲")
         return
 
     if text == "🪙 Монетка" or text == "/coin":
-        bot.reply_to(message, f"🪙 {random.choice(['Орёл 🦅', 'Решка 🪙'])}")
+        msg = bot.reply_to(message, "🪙 Подбрасываю...")
+        time.sleep(1)
+        result = random.choice(["🦅 **Орёл!**", "🪙 **Решка!**"])
+        bot.edit_message_text(result, message.chat.id, msg.id, parse_mode='Markdown')
         return
 
     if text == "🔢 Случайное число" or text == "/random":
@@ -141,20 +157,16 @@ def handle(message):
         word = random.choice(WORDS)
         game_state[user_id] = {
             "mode": "hangman",
-            "data": {
-                "word": word,
-                "guessed": [],    # угаданные буквы
-                "wrong": 0,       # ошибки
-                "max_wrong": 6    # попыток
-            }
+            "data": {"word": word, "guessed": [], "wrong": 0, "max_wrong": 6}
         }
         bot.reply_to(
             message,
-            "🪢 **Виселица началась!**\n\n"
+            f"🪢 **Виселица началась!**\n\n"
+            f"<code>{HANGMAN_STAGES[0]}</code>\n\n"
             f"Слово: `{show_word(word, [])}`\n"
             f"Жизни: {'❤️' * 6} (6)\n\n"
             "Пиши букву (например: `а`) или слово целиком.",
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return
 
@@ -206,7 +218,7 @@ def handle(message):
         word = data["word"]
         guessed = data["guessed"]
         
-        # Если ввели слово целиком
+        # Слово целиком
         if len(text) > 1:
             if text_lower == word:
                 reset_state(user_id)
@@ -227,7 +239,7 @@ def handle(message):
                 )
             return
         
-        # Если ввели букву
+        # Буква
         letter = text_lower
         if not letter.isalpha():
             bot.reply_to(message, "🤔 Введи **одну** букву или слово целиком.")
@@ -241,7 +253,6 @@ def handle(message):
         data["guessed"] = guessed
         
         if letter in word:
-            # Попал!
             if all(c in guessed for c in word):
                 reset_state(user_id)
                 bot.reply_to(
@@ -256,12 +267,13 @@ def handle(message):
                 bot.reply_to(
                     message,
                     f"✅ Есть буква **{letter.upper()}**!\n\n"
+                    f"<code>{HANGMAN_STAGES[data['wrong']]}</code>\n\n"
                     f"`{show_word(word, guessed)}`\n"
                     f"Жизни: {show_lives(data)}\n"
-                    f"Буквы: {', '.join(sorted(guessed))}"
+                    f"Буквы: {', '.join(sorted(guessed))}",
+                    parse_mode='HTML'
                 )
         else:
-            # Промах
             data["wrong"] += 1
             if check_lose(data, message):
                 return
@@ -269,9 +281,11 @@ def handle(message):
             bot.reply_to(
                 message,
                 f"❌ Буквы **{letter.upper()}** нет.\n\n"
+                f"<code>{HANGMAN_STAGES[data['wrong']]}</code>\n\n"
                 f"`{show_word(word, guessed)}`\n"
                 f"Жизни: {show_lives(data)}\n"
-                f"Буквы: {', '.join(sorted(guessed))}"
+                f"Буквы: {', '.join(sorted(guessed))}",
+                parse_mode='HTML'
             )
         return
 
@@ -285,10 +299,9 @@ def handle(message):
     )
 
 # ==========================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ВИСЕЛИЦЫ
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==========================================
 def show_word(word, guessed):
-    """Показывает слово с угаданными буквами: п_о_г_р_а_м_м_и_р_о_в_а_н_и_е"""
     result = ""
     for char in word:
         if char in guessed:
@@ -298,12 +311,10 @@ def show_word(word, guessed):
     return result.strip()
 
 def show_lives(data):
-    """Показывает жизни: ❤️❤️❤️❤️🖤🖤"""
     alive = data["max_wrong"] - data["wrong"]
     return "❤️" * alive + "🖤" * data["wrong"]
 
 def check_lose(data, message):
-    """Проверяет, проиграл ли игрок"""
     if data["wrong"] >= data["max_wrong"]:
         word = data["word"]
         user_id = message.from_user.id
@@ -311,9 +322,10 @@ def check_lose(data, message):
         bot.reply_to(
             message,
             f"💀 **Ты проиграл!**\n\n"
+            f"<code>{HANGMAN_STAGES[6]}</code>\n\n"
             f"Слово было: **{word.upper()}**\n\n"
             "Хочешь ещё? Нажми «🪢 Виселица»",
-            parse_mode='Markdown',
+            parse_mode='HTML',
             reply_markup=main_keyboard()
         )
         return True
