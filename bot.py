@@ -18,7 +18,8 @@ if not OPENROUTER_KEY:
     print("❌ ОШИБКА: Переменная OPENROUTER_KEY не задана на Render!")
     exit(1)
 
-MODEL = "openrouter/free" 
+# НОВАЯ МОДЕЛЬ
+MODEL = "meta-llama/llama-3.1-8b-instruct:free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -101,12 +102,11 @@ def stalker_loop(user_id, chat_id):
         return
     
     while user.get("active", False):
-        time.sleep(60) # Проверка раз в минуту
+        time.sleep(60)
         
         if not user.get("active"):
             return
             
-        # Если молчит больше 10 минут
         diff = (datetime.now() - user["last_active"]).total_seconds()
         if diff > 600:
             prompt = "Пользователь молчит уже долго. Напиши ему что-то жуткое, напомни, что ты всё ещё здесь. Задай вопрос, чтобы он ответил."
@@ -120,7 +120,7 @@ def stalker_loop(user_id, chat_id):
             user["last_active"] = datetime.now()
 
 # ==========================================
-# СТАРТ (Без кнопок, новое приветствие)
+# СТАРТ
 # ==========================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -131,10 +131,8 @@ def start(message):
         "active": True
     }
     
-    # Запускаем фоновый поток
     threading.Thread(target=stalker_loop, args=(user_id, message.chat.id), daemon=True).start()
     
-    # Отправляем приветствие и убираем старые кнопки, если были
     bot.reply_to(
         message,
         f"👁️ Я знаю, что ты только что зашёл сюда, {message.from_user.first_name or 'смертный'}.\n\n"
@@ -153,7 +151,6 @@ def handle(message):
     user_id = message.from_user.id
     text = message.text
     
-    # Обработка команды /stop на всякий случай
     if text == "/stop":
         if user_id in user_data:
             user_data[user_id]["active"] = False
@@ -162,16 +159,12 @@ def handle(message):
     
     user = user_data.get(user_id)
     if not user or not user.get("active", False):
-        # Если бот был остановлен, /start его перезапустит
         bot.reply_to(message, "👁️ Напиши /start, чтобы я вернулся.")
         return
     
     user["last_active"] = datetime.now()
     
-    # Статус "печатает" (без задержки)
     status = bot.reply_to(message, "👁️ ...")
-    
-    # Отправляем в ИИ
     response = ask_ai(user_id, text)
     
     try:
